@@ -56,7 +56,7 @@ end
 
 module CrashAnalysis
   def self.run(filePath)
-    system("running...")
+    system("echo running...")
     if File.directory?(filePath)
       crashFileNames = traverse(filePath)
       AnalysisLog(crashFileNames)
