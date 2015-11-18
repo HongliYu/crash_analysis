@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
 
-require "update_all_git_repos"
+require "crash_analysis"
 
 puts CrashAnalysis.run(ARGV[0])
