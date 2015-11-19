@@ -2,6 +2,8 @@ require "crash_analysis/version"
 
 def traverse(filePath)
   crashFileNames = Array.new
+  countApp = 0
+  countDSYM = 0
   if File.directory?(filePath)
     Dir.foreach(filePath) do |fileName|
       fileSuffixArray = fileName.strip.split(".")
@@ -9,10 +11,23 @@ def traverse(filePath)
         fileSuffixArray.pop
         crashFileNames << (filePath + "/" + fileSuffixArray.first)
       end
+      if fileSuffixArray.last == "app"
+        countApp += 1
+      end
+      if fileSuffixArray.last == "dSYM"
+        countDSYM += 1
+      end
     end
   else
     puts "Files:" + filePath
   end
+
+  if countApp != 1 || countDSYM !=1
+      puts "error:\n"
+      puts "make sure the directory contains those files: one .app file & one .dSYM file & related crash files"
+    return
+  end
+
   return crashFileNames
 end
 
@@ -56,12 +71,20 @@ end
 
 module CrashAnalysis
   def self.run(filePath)
-    system("echo running...")
-    if File.directory?(filePath)
-      crashFileNames = traverse(filePath)
-      AnalysisLog(crashFileNames)
+    puts "running..."
+    if filePath.nil? || filePath.empty?
+      puts "error: need directory path"
     else
-      puts "error: not a directory"
+      if File.directory?(filePath)
+        crashFileNames = traverse(filePath)
+        if crashFileNames.nil? || crashFileNames.empty?
+          return
+        else
+           AnalysisLog(crashFileNames)
+        end
+      else
+        puts "error: not a directory"
+      end
     end
   end
 end
