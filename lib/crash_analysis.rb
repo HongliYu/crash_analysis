@@ -107,13 +107,19 @@ module CrashAnalysis
       end
 
       for fileName in crashFileNames
-        shortFileName = fileName.split("/").last
-        outputFile = logDir + "/" + shortFileName +".log"
-        system("#{evn} \n #{cmd} #{fileName}.#{rawFileSuffix} BDPhoneBrowser.app.dSYM > #{outputFile}")
-        @percentCount = @percentCount + 1
-        precent = ((@percentCount.to_f / crashFileNames.count.to_f) * 10000).round / 10000.0
-        str = (precent * 100).to_s
-        print "\r #{str[0,4]}%"
+        runningThread = Thread.new do
+          shortFileName = fileName.split("/").last
+          outputFile = logDir + "/" + shortFileName +".log"
+          system("#{evn} \n #{cmd} #{fileName}.#{rawFileSuffix} BDPhoneBrowser.app.dSYM > #{outputFile}")
+          @percentCount = @percentCount + 1
+          precent = ((@percentCount.to_f / crashFileNames.count.to_f) * 10000).round / 10000.0
+          str = (precent * 100).to_s
+          print "\r #{str[0,4]}%"
+          Thread.main.wakeup
+        end
+        # Maximum run for 10 seconds
+        sleep 10
+        Thread.kill(runningThread)
       end
       puts "\n Done."
     end
