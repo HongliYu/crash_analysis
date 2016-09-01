@@ -98,7 +98,7 @@ module CrashAnalysis
   end
 
     def AnalysisLog(crashFileNames, rawFileSuffix, filePath)
-      cmd = "/Applications/Xcode.app/Contents/SharedFrameworks/DTDeviceKitBase.framework/Versions/A/Resources/symbolicatecrash"
+      cmd = "/Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/symbolicatecrash"
       evn = "export DEVELOPER_DIR='/Applications/XCode.app/Contents/Developer'"
       logDir = filePath + "/crash_logs"
 
