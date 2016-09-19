@@ -1,127 +1,109 @@
 require "crash_analysis/version"
 
-# Utils
-class Array
-  def prog_each(&block) 
-    bar_length = (`tput cols` || 80).to_i - 30
-    time_now = Time.now
-    total = self.count
-    last_flush = 0
-    flush_time = 1
-    self.each_with_index{|element, x|
-      cur = (x + 1) * 100 / total
-      time_left = (((Time.now - time_now) * (100 - cur)).to_f / cur).ceil
-      if (Time.now - last_flush).to_i >= flush_time or time_left < 1
-        time_left_graceful = Time.at(time_left).utc.strftime("%H:%M:%S")
-        if time_left > 86400
-          time_left_graceful = res.split(":")
-          time_left_graceful[0] = (time_left_graceful[0].to_i + days * 24).to_s
-          time_left_graceful = time_left_graceful.join(":")
-        end
-        print "\r"
-        cur_len = (bar_length * (x + 1)) / total
-        print "[" << (["#"] * cur_len).join << (["-"] * (bar_length - cur_len)).join << "] #{cur}% [#{time_left_graceful} left]"
-        last_flush = Time.now
-      end
-      block.call element if block
-    }
-    puts "\n"
-    "Done."
-  end
-end
-
 # Main
 module CrashAnalysis
-  Version = "0.1.3"
-  def self.run(filePath, rawFileSuffix)
-    puts "running..."
-    analysis = Analysis.new()
-    analysis.run(filePath, rawFileSuffix)
+
+  def initialize()
+  end
+
+  def self.run()
+  puts "input logs_dir_path: "
+    logs_dir_path = gets.chomp
+  if logs_dir_path.empty? || logs_dir_path.nil? || !File.directory?(logs_dir_path)
+    puts "invalid logs_dir_path"
+    return
+  end
+  puts "input log_file_suffix(log, crash, txt etc.): "
+    log_file_suffix = gets.chomp
+  if log_file_suffix.empty? || log_file_suffix.nil?
+    puts "invalid log_file_suffix"
+    return
+  end
+
+  puts "init settings..."
+  output = []
+  r, io = IO.pipe
+  fork do
+    system("find /Applications/Xcode.app -name symbolicatecrash -type f", out: io, err: :out)
+  end
+  io.close
+  r.each_line{|l| puts l; output << l.chomp}
+  symbolicatecrash_path = output[0]
+
+  puts "running..."
+  analysis = Analysis.new()
+  analysis.run(logs_dir_path, log_file_suffix, symbolicatecrash_path)
+
   end
 
   class Analysis
 
     def initialize()
-      @percentCount = 0
+      @dSYM_file_name = ""
     end
 
-    def run(filePath, rawFileSuffix)
-      if rawFileSuffix.nil? || rawFileSuffix.empty?
-          puts "error: need 2 arguments DirPath & raw log file suffix like:txt, log, crash..."
-          return
-        end
-        if filePath.nil? || filePath.empty?
-          puts "error: need directory path"
-        else
-          if File.directory?(filePath)
-            crashFileNames = traverse(filePath, rawFileSuffix)
-            if crashFileNames.nil? || crashFileNames.empty?
-              return
-            else
-               AnalysisLog(crashFileNames, rawFileSuffix, filePath)
-            end
-          else
-            puts "error: not a directory"
-          end
-        end
+    def run(logs_dir_path, log_file_suffix, symbolicatecrash_path)
+      crash_files = traverse(logs_dir_path, log_file_suffix)
+      analysis_action(crash_files, log_file_suffix, logs_dir_path, symbolicatecrash_path)
     end
 
-    def traverse(filePath, rawFileSuffix)
-    crashFileNames = Array.new
-    countApp = 0
-    countDSYM = 0
-    if File.directory?(filePath)
-      Dir.foreach(filePath) do |fileName|
-        fileSuffixArray = fileName.strip.split(".")
-        if fileSuffixArray.last == rawFileSuffix
-          fileSuffixArray.pop
-          crashFileNames << (filePath + "/" + fileSuffixArray.first)
+    def traverse(logs_dir_path, log_file_suffix)
+      crash_files = Array.new
+      count_app = 0
+      count_dSYM = 0
+
+      Dir.foreach(logs_dir_path) do |file|
+        file_suffix_array = file.strip.split(".")
+        if file_suffix_array.last == log_file_suffix
+          file_suffix_array.pop
+          crash_files << (file)
         end
-        if fileSuffixArray.last == "app"
-          countApp += 1
+        if file_suffix_array.last == "app"
+          count_app += 1
         end
-        if fileSuffixArray.last == "dSYM"
-          countDSYM += 1
+        if file_suffix_array.last == "dSYM"
+          @dSYM_file_name = file
+          count_dSYM += 1
         end
       end
-    else
-      puts "Files:" + filePath
+
+      if count_app != 1 || count_dSYM !=1 || crash_files.count < 1
+          puts "error:\n"
+          puts "make sure the directory contains those files: 1 .app file & 1 .dSYM file & related crash files"
+        return
+      end
+      return crash_files
     end
 
-    if countApp != 1 || countDSYM !=1 || crashFileNames.count < 1
-        puts "error:\n"
-        puts "make sure the directory contains those files: one .app file & one .dSYM file & related crash files"
-      return
-    end
-
-    return crashFileNames
-  end
-
-    def AnalysisLog(crashFileNames, rawFileSuffix, filePath)
-      cmd = "/Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/symbolicatecrash"
+    def analysis_action(crash_files, log_file_suffix, logs_dir_path, symbolicatecrash_path)
       evn = "export DEVELOPER_DIR='/Applications/XCode.app/Contents/Developer'"
-      logDir = filePath + "/crash_logs"
-
-      if !File.directory?(logDir)
-        Dir.mkdir(logDir)
+      output_log_dir = logs_dir_path + "/crash_logs"
+      percent_count = 0
+      if !File.directory?(output_log_dir)
+        Dir.mkdir(output_log_dir)
       end
 
-      for fileName in crashFileNames
-        runningThread = Thread.new do
-          shortFileName = fileName.split("/").last
-          outputFile = logDir + "/" + shortFileName +".log"
-          system("#{evn} \n #{cmd} #{fileName}.#{rawFileSuffix} BDPhoneBrowser.app.dSYM > #{outputFile}")
-          @percentCount = @percentCount + 1
-          precent = ((@percentCount.to_f / crashFileNames.count.to_f) * 10000).round / 10000.0
+      for file in crash_files
+        running_thread = Thread.new do
+          short_file_name = file.split("/").last
+
+          output_file = output_log_dir + "/" + short_file_name
+          current_log_file = logs_dir_path + "/" + file
+          system("#{evn} \n #{symbolicatecrash_path} #{current_log_file} #{@dSYM_file_name} > #{output_file}")
+          
+          percent_count = percent_count + 1
+          precent = ((percent_count.to_f / crash_files.count.to_f) * 10000).round / 10000.0
           str = (precent * 100).to_s
-          print "\r #{str[0,4]}%"
+          puts "#{str[0,4]}% || analyzing file: #{file}"
           Thread.main.wakeup
         end
         # Maximum run for 10 seconds
         sleep 10
-        Thread.kill(runningThread)
+        Thread.kill(running_thread)
       end
       puts "\n Done."
     end
+
   end
+  
 end
